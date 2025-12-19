@@ -1,30 +1,59 @@
 import React, { useEffect, useRef, useState } from "react";
-import notepadIcon from '/notepad-icon.png'
-import saveIcon from '/save-icon.ico'
+import { Save, X, Minus, Maximize2, Minimize2 } from "lucide-react";
+import notepadIcon from '/notepad-icon.png';
 import SaveModal from "./SaveModal";
 
-const NotepadWindow = ({closeNotepad, onSaveFile, openedFile}) => {
+const NotepadWindow = ({ closeNotepad, onSaveFile, openedFile, onUpdateFile }) => {
 
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [content, setContent] = useState("");
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
+    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
-    const [position, setPosition] = useState({x:150,y:100});
+    const [position, setPosition] = useState({ x: 150, y: 100 });
+    const [previousPosition, setPreviousPosition] = useState({ x: 150, y: 100 });
     const dragging = useRef(false);
-    const offset = useRef({x:0,y:0});
+    const offset = useRef({ x: 0, y: 0 });
 
-    useEffect(()=>{
-        if(openedFile){
+    useEffect(() => {
+        if (openedFile) {
             setContent(openedFile.content);
+            setHasUnsavedChanges(false);
+        } else {
+            setContent("");
+            setHasUnsavedChanges(false);
         }
-    },[openedFile]);
+    }, [openedFile]);
+
+    const handleContentChange = (e) => {
+        setContent(e.target.value);
+        setHasUnsavedChanges(true);
+    };
+
+    const handleSave = () => {
+        // If editing an existing file, save directly without modal
+        if (openedFile) {
+            if (onUpdateFile) {
+                onUpdateFile(openedFile.id, openedFile.name, content);
+            } else {
+                onSaveFile(openedFile.name, content);
+            }
+            setHasUnsavedChanges(false);
+        } else {
+            // New file - show save modal
+            setShowSaveModal(true);
+        }
+    };
 
     const startDrag = (e) => {
+        if (isFullscreen) return;
         e.preventDefault();
         dragging.current = true;
-        
+
         offset.current = {
-            x : e.clientX - position.x,
-            y : e.clientY - position.y, 
+            x: e.clientX - position.x,
+            y: e.clientY - position.y,
         };
 
         document.addEventListener("mousemove", onDrag);
@@ -32,10 +61,10 @@ const NotepadWindow = ({closeNotepad, onSaveFile, openedFile}) => {
     };
 
     const onDrag = (e) => {
-        if(!dragging.current) return;
-        
-        const winWidth = 640;
-        const winHeight = 509;
+        if (!dragging.current || isFullscreen) return;
+
+        const winWidth = 700;
+        const winHeight = 520;
 
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
@@ -43,115 +72,197 @@ const NotepadWindow = ({closeNotepad, onSaveFile, openedFile}) => {
         let newX = e.clientX - offset.current.x;
         let newY = e.clientY - offset.current.y;
 
-        newX = Math.max(0, Math.min(newX,screenWidth-winWidth));
-        newY = Math.max(0, Math.min(newY,screenHeight-winHeight));
+        newX = Math.max(0, Math.min(newX, screenWidth - winWidth));
+        newY = Math.max(0, Math.min(newY, screenHeight - winHeight));
 
         setPosition({
-            x : newX,
-            y : newY,
+            x: newX,
+            y: newY,
         });
     };
 
     const stopDrag = () => {
         dragging.current = false;
-        document.removeEventListener("mousemove",onDrag);
-        document.removeEventListener("mouseup",stopDrag);
-    }
+        document.removeEventListener("mousemove", onDrag);
+        document.removeEventListener("mouseup", stopDrag);
+    };
+
+    const toggleFullscreen = () => {
+        if (isFullscreen) {
+            setPosition(previousPosition);
+            setIsFullscreen(false);
+        } else {
+            setPreviousPosition(position);
+            setPosition({ x: 0, y: 0 });
+            setIsFullscreen(true);
+        }
+    };
+
+    const toggleMinimize = () => {
+        setIsMinimized(!isMinimized);
+    };
+
+    // Calculate stats for status bar
+    const lineCount = content.split('\n').length;
+    const charCount = content.length;
+    const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+
+    // Keyboard shortcut for save
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                handleSave();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [content, openedFile]);
+
+    if (isMinimized) return null;
+
+    const fileName = openedFile ? openedFile.name : "Untitled";
+    const displayTitle = hasUnsavedChanges ? `*${fileName} - Notepad` : `${fileName} - Notepad`;
+
     return (
-        <div className="w-[640px] h-[460px]
-                absolute bg-[rgba(255,255,255,0.25)]
-                rounded-xl border border-transparent
-                backdrop-blur-lg shadow-[0_0_25px_rgba(0,0,0,0.35)]"
-            
+        <div
+            className={`
+                ${isFullscreen ? 'w-full h-[calc(100vh-48px)]' : 'w-[700px] h-[520px]'}
+                absolute bg-[#f0f0f0]
+                rounded-t-lg border border-[#999]
+                shadow-[2px_2px_10px_rgba(0,0,0,0.3)]
+                flex flex-col
+            `}
             style={{
-                top:position.y,
-                left:position.x
+                top: isFullscreen ? 0 : position.y,
+                left: isFullscreen ? 0 : position.x,
+                zIndex: 100
             }}
         >
 
-            {/* Top area  */}
-            <div className="flex justify-between mt-2.5 px-2.5 cursor-move"
+            {/* Title Bar - Classic Windows Style */}
+            <div
+                className={`flex justify-between items-center h-8 px-2
+                    bg-gradient-to-b from-[#0a246a] via-[#0a246a] to-[#0d47a1]
+                    rounded-t-lg ${!isFullscreen ? 'cursor-move' : ''}`}
                 onMouseDown={startDrag}
             >
-
-                {/* top left section  */}
-                <div className="flex gap-1 items-center">
-                    <img src={notepadIcon} alt="notepadIcon" className="h-5" />
-                    <p className="text-sm font-[Inter] text-white/85">
-                        {openedFile ? openedFile.name : "Untitled - Notepad"}
+                {/* Left section - App icon and title */}
+                <div className="flex gap-2 items-center">
+                    <img src={notepadIcon} alt="notepad" className="h-4 w-4" />
+                    <p className="text-sm font-normal text-white select-none">
+                        {displayTitle}
                     </p>
                 </div>
 
+                {/* Right section - Window controls */}
+                <div className="flex items-center gap-0.5">
 
-                {/* closing buttons */}
-                <div className="flex items-center gap-2">
-
-                    {/* Save button */}
-                    <button 
-                        className="hover:scale-107 transition-transform duration-200 ease-in-out"
-                        onClick={()=> setShowSaveModal(true)}   
+                    {/* Minimize button */}
+                    <button
+                        onClick={toggleMinimize}
+                        className="w-6 h-6 flex items-center justify-center
+                            bg-gradient-to-b from-[#c4d6f7] to-[#7396d8]
+                            border border-[#4169b0]
+                            rounded-sm
+                            hover:from-[#d9e6fc] hover:to-[#89aae8]
+                            active:from-[#8aa1d6] active:to-[#5b7ec2]"
+                        title="Minimize"
                     >
-                        <img src={saveIcon} alt="saveIcon" className="h-5" />
+                        <Minus size={12} className="text-[#0a246a]" strokeWidth={3} />
+                    </button>
+
+                    {/* Maximize/Restore button */}
+                    <button
+                        onClick={toggleFullscreen}
+                        className="w-6 h-6 flex items-center justify-center
+                            bg-gradient-to-b from-[#c4d6f7] to-[#7396d8]
+                            border border-[#4169b0]
+                            rounded-sm
+                            hover:from-[#d9e6fc] hover:to-[#89aae8]
+                            active:from-[#8aa1d6] active:to-[#5b7ec2]"
+                        title={isFullscreen ? "Restore Down" : "Maximize"}
+                    >
+                        {isFullscreen ? (
+                            <Minimize2 size={12} className="text-[#0a246a]" strokeWidth={2.5} />
+                        ) : (
+                            <Maximize2 size={12} className="text-[#0a246a]" strokeWidth={2.5} />
+                        )}
                     </button>
 
                     {/* Close Button */}
                     <button
                         onClick={closeNotepad}
-                        className="
-                                group relative
-                                w-[48px] h-[19px]
-                                border-y border-r border-[#8a413d] border-l-[#8a413d] border-l
-                                rounded-[2px] rounded-tl-none rounded-bl-none
-                                bg-linear-to-b from-[#eeb4b0] via-[#e08984] to-[#c54e48]
-                                hover:from-[#f5cecc] hover:via-[#ea9b96] hover:to-[#d86b66]
-                                hover:border-[#b04a44] hover:shadow-[0_0_2px_#e08984]
-                                active:bg-[#b0433e]
-                                flex items-center justify-center
-                                ml-px
-                                shadow-[inset_0_1px_0_rgba(255,255,255,0.4),inset_0_-1px_0_rgba(200,50,50,0.2)]
-                            "
+                        className="w-6 h-6 flex items-center justify-center
+                            bg-gradient-to-b from-[#f5a9a0] to-[#d85545]
+                            border border-[#8a413d]
+                            rounded-sm
+                            hover:from-[#fcc4bc] hover:to-[#ea6b5c]
+                            active:from-[#c44a3c] active:to-[#a53328]"
+                        title="Close"
                     >
-                        <svg
-                            viewBox="0 0 10 10"
-                            className="w-[10px] h-[10px] text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.5)]"
-                            style={{ filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.5))' }}
-                        >
-                            <path
-                                d="M1 1 L9 9 M9 1 L1 9"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                            />
-                        </svg>
+                        <X size={12} className="text-white" strokeWidth={3} />
                     </button>
                 </div>
             </div>
-            
 
-            {/* text area  */}
-            <div className="border-t-0 h-full py-4 px-2.5">
+            {/* Toolbar */}
+            <div className="flex items-center gap-1 px-2 py-1 bg-[#f5f5f5] border-b border-[#ddd]">
+                <button
+                    onClick={handleSave}
+                    className="p-1.5 hover:bg-[#e0e0e0] rounded border border-transparent 
+                        hover:border-[#aaa] flex items-center gap-1"
+                    title={openedFile ? "Save (Ctrl+S)" : "Save As... (Ctrl+S)"}
+                >
+                    <Save size={16} className="text-[#444]" />
+                    <span className="text-xs text-[#444]">
+                        {openedFile ? "Save" : "Save As"}
+                    </span>
+                </button>
+            </div>
+
+            {/* Text area */}
+            <div className="flex-1 p-1 bg-[#f0f0f0] overflow-hidden">
                 <textarea
-                className="
-                    w-full h-[400px]
-                    p-3
-                    text-[14px] font-mono
-                    leading-5
-                    outline-none resize-none
-                    bg-white
-                    rounded-lg
-                "
-                value={content}                        
-                onChange={(e)=> setContent(e.target.value)}   
+                    className="
+                        w-full h-full
+                        p-2
+                        text-[14px] font-mono
+                        leading-5
+                        outline-none resize-none
+                        bg-white
+                        text-[#333]
+                        border border-[#7f9db9]
+                        focus:border-[#569de5]
+                    "
+                    placeholder="Start typing..."
+                    value={content}
+                    onChange={handleContentChange}
                 />
             </div>
 
+            {/* Status Bar */}
+            <div className="flex justify-between items-center px-2 py-1 bg-[#ece9d8] 
+                border-t border-[#ccc]">
+                <div className="flex gap-4 text-xs text-[#666]">
+                    <span>Ln {lineCount}</span>
+                    <span>Col 1</span>
+                </div>
+                <div className="flex gap-4 text-xs text-[#666]">
+                    <span>{wordCount} words</span>
+                    <span>{charCount} characters</span>
+                    <span>UTF-8</span>
+                </div>
+            </div>
 
-            {/* Save Modal */}
+
+            {/* Save Modal - Only shown for new files */}
             {showSaveModal && (
-                <SaveModal 
+                <SaveModal
                     onSave={(name) => {
-                        onSaveFile(name, content);      
+                        onSaveFile(name, content);
                         setShowSaveModal(false);
+                        setHasUnsavedChanges(false);
                     }}
                     onCancel={() => setShowSaveModal(false)}
                 />
@@ -162,3 +273,4 @@ const NotepadWindow = ({closeNotepad, onSaveFile, openedFile}) => {
 };
 
 export default NotepadWindow;
+
